@@ -1,0 +1,51 @@
+# hunt-a1.conf — Configuration for the OCI A1 Capacity Hunter
+#
+# Setup:
+#   1. Copy this file:  cp hunt-a1.conf.example ~/hunt-a1.conf
+#   2. Fill in your Oracle Cloud values (see instructions below each var)
+#   3. Lock permissions: chmod 600 ~/hunt-a1.conf
+#
+# Tip: run `oci setup config` first if you haven't configured the OCI CLI yet.
+
+# === OCI Resource IDs ===
+
+# Compartment OCID — OCI Console > Identity > Compartments > your compartment > copy OCID
+COMPARTMENT_ID="ocid1.compartment.oc1..xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Subnet OCID — OCI Console > Networking > Virtual Cloud Networks > your VCN > Subnets > copy OCID
+SUBNET_ID="ocid1.subnet.oc1.<your-region>.xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Image OCID — OCI Console > Compute > Images > pick your OS > copy OCID
+# Quick way:  oci compute image list --compartment-id $COMPARTMENT_ID \
+#               --shape "VM.Standard.A1.Flex" --operating-system "Canonical Ubuntu" \
+#               --query 'data[0].id' --raw-output
+IMAGE_ID="ocid1.image.oc1.<your-region>.xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# === Availability Domains ===
+# List yours:  oci iam availability-domain list --query 'data[].name' --output table
+# Most regions have 1–3 ADs. Only set what exists in your region.
+AD_1="xxxx:YOUR-REGION-AD-1"
+AD_2="xxxx:YOUR-REGION-AD-2"
+AD_3="xxxx:YOUR-REGION-AD-3"
+# Single-AD region? Leave AD_2 and AD_3 empty:
+#   AD_2=""
+#   AD_3=""
+
+# === Instance Configuration ===
+# Free Tier allowance: up to 4 OCPU + 24 GB RAM total across all A1 instances.
+# You can split this (e.g., 2 instances x 2 OCPU / 12 GB), but most people use one instance.
+INSTANCE_NAME="my-a1-server"
+SHAPE="VM.Standard.A1.Flex"
+OCPUS=4
+MEMORY_GB=24
+SSH_KEY_PATH="$HOME/.ssh/id_ed25519.pub"
+
+# === Email Notifications (optional) ===
+# Leave all three empty to skip email — the script works fine without it.
+# For Gmail: generate an App Password at https://myaccount.google.com/apppasswords
+SMTP_USER=""
+SMTP_PASS=""
+NOTIFY_TO=""
+# Defaults to Gmail SMTP. Change if using another provider:
+# SMTP_HOST="smtp.gmail.com"
+# SMTP_PORT="465"

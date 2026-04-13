@@ -1,0 +1,10 @@
+# Config with real credentials
+*.conf
+!*.conf.example
+
+# Runtime state files
+.hunt-a1.lock
+.hunt-a1.success
+
+# Logs
+*.log
