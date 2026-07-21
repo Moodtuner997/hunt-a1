@@ -5,6 +5,8 @@
 # Runtime state files
 .hunt-a1.lock
 .hunt-a1.success
+.hunt-a1.fatal
+.hunt-a1.failcount
 
 # Logs
 *.log
