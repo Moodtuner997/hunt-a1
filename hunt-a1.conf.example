@@ -32,13 +32,26 @@ AD_3="xxxx:YOUR-REGION-AD-3"
 #   AD_3=""
 
 # === Instance Configuration ===
-# Free Tier allowance: up to 4 OCPU + 24 GB RAM total across all A1 instances.
-# You can split this (e.g., 2 instances x 2 OCPU / 12 GB), but most people use one instance.
+# Free Tier allowance (since June 15, 2026): 2 OCPU + 12 GB RAM total across all
+# A1 instances, max 2 instances. You can split this (2 x 1 OCPU / 6 GB) or use
+# one instance (1 x 2 OCPU / 12 GB — the defaults below).
+# IMPORTANT: requesting more than 2 OCPU / 12 GB on a Free Tier account fails
+# with LimitExceeded on every attempt (the capacity hunt can never succeed).
+# Pay As You Go accounts may have higher A1 limits (the old 4 / 24 is not
+# officially confirmed post-June 2026) — check your tenancy's service limits.
 INSTANCE_NAME="my-a1-server"
 SHAPE="VM.Standard.A1.Flex"
-OCPUS=4
-MEMORY_GB=24
+OCPUS=2
+MEMORY_GB=12
 SSH_KEY_PATH="$HOME/.ssh/id_ed25519.pub"
+
+# === Circuit Breaker ===
+# Stop hunting after this many CONSECUTIVE fatal errors (LimitExceeded,
+# NotAuthorizedOrNotFound, InvalidParameter...). These errors mean the config
+# is wrong — retrying forever only spams Oracle's API and your inbox.
+# When tripped: the cron entry is removed, ONE alert email is sent, and
+# ~/.hunt-a1.fatal is created. Fix your config, then: rm ~/.hunt-a1.fatal
+MAX_CONSECUTIVE_FATALS=30
 
 # === Email Notifications (optional) ===
 # Leave all three empty to skip email — the script works fine without it.
