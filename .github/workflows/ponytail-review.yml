@@ -1,0 +1,70 @@
+# Revue « ponytail » : sur chaque PR et chaque issue ouverte, Claude propose la
+# version la plus simple qui marche (https://github.com/DietrichGebert/ponytail).
+# Lecture seule : il commente, il ne modifie rien.
+# Secret requis : CLAUDE_CODE_OAUTH_TOKEN (abonnement Claude, genere par `claude setup-token`).
+name: Ponytail review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issues:
+    types: [opened]
+
+concurrency:
+  group: ponytail-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Revue de PR
+        if: github.event_name == 'pull_request'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: https://github.com/DietrichGebert/ponytail.git
+          plugins: ponytail@ponytail
+          prompt: |
+            /ponytail:ponytail-review REPO: ${{ github.repository }} PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Le diff a revoir : `git diff origin/${{ github.base_ref }}...HEAD` (ignore les fichiers *.lock).
+            Reponds en francais, markdown GitHub. Une ligne par trouvaille :
+            `fichier:ligne` · tag (delete/stdlib/native/yagni/shrink) · quoi couper · par quoi remplacer.
+            Termine par `net: -N lignes possibles`. Rien trouve = une ligne.
+            Pas de bugs, pas de secu, pas de perf : seulement la complexite.
+            Poste le resultat en UN commentaire avec `gh pr comment`, titre `## 🐴 Ponytail review`.
+          claude_args: |
+            --model claude-opus-5 --allowedTools "Skill,Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr comment:*),Bash(gh pr view:*)"
+
+      - name: Revue d'issue
+        if: github.event_name == 'issues'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: https://github.com/DietrichGebert/ponytail.git
+          plugins: ponytail@ponytail
+          track_progress: true
+          prompt: |
+            /ponytail:ponytail ultra
+
+            REPO: ${{ github.repository }} ISSUE NUMBER: ${{ github.event.issue.number }}
+            Lis l'issue avec `gh issue view`, regarde le code concerne, puis propose en francais
+            la version la plus simple qui fonctionne en montant l'echelle ponytail
+            (ca doit exister ? deja dans le code ? stdlib ? natif ? dependance installee ? une ligne ?).
+            Format : 1) ce qu'on peut ne PAS faire, 2) le plan minimal (fichiers touches, <10 lignes),
+            3) ce qu'on reporte et quand l'ajouter. 15 lignes max, pas de code complet.
+            Ecris le resultat final dans ton commentaire de suivi (mets-le a jour), titre `## 🐴 Ponytail review`.
+          claude_args: |
+            --model claude-opus-5 --allowedTools "Skill,Read,Grep,Glob,Bash(git log:*),Bash(gh issue view:*)"
