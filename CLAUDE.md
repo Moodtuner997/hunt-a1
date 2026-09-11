@@ -45,7 +45,7 @@ State files all live in `$HOME`: `.hunt-a1.lock`, `.hunt-a1.success`, `.hunt-a1.
 ## Conventions and gotchas
 
 - Public repo: keep it user-agnostic — no real OCIDs, regions, emails or hostnames in committed files. Real values live only in `~/hunt-a1.conf`.
-- Free Tier limits since 2026-06-15 are 2 OCPU / 12 GB total, max 2 instances; the conf example defaults to `OCPUS=2 MEMORY_GB=12`. Asking for more on Free Tier yields `LimitExceeded` on every attempt and is exactly what the circuit breaker exists for. If you change limits or defaults, update the README table, the FAQ, the conf example comments and the breaker email text together.
+- Free Tier A1 limits (see README 'June 2026 Free Tier change') are 2 OCPU / 12 GB total, max 2 instances; keep README, conf example, script and this line in sync. Asking for more on Free Tier yields `LimitExceeded` on every attempt and is exactly what the circuit breaker exists for.
 - Keep the script single-file and zero-dependency; do not add Python/Node tooling.
 - Log lines follow `[$(date -Is)] LEVEL: message` with levels INFO / RETRY / FATAL / WARN / SUCCESS / ERROR — the README tells users to `grep SUCCESS`.
 - README is English; commit messages English. The README links to hitrov/oci-arm-host-capacity as the archived historical reference.
