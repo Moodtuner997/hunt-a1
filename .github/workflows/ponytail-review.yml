@@ -22,6 +22,9 @@ permissions:
 
 jobs:
   review:
+    # Dependabot ne recoit pas les secrets du depot : CLAUDE_CODE_OAUTH_TOKEN arrive vide
+    # et l'action echoue en rouge sans avoir rien revu. Mieux vaut sauter le job.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
