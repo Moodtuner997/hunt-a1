@@ -1,12 +1,13 @@
-# Revue « ponytail » : sur chaque PR et chaque issue ouverte, Claude propose la
-# version la plus simple qui marche (https://github.com/DietrichGebert/ponytail).
+# Revue « ponytail » : a l'ouverture d'une PR et d'une issue, Claude propose la version
+# la plus simple qui marche (https://github.com/DietrichGebert/ponytail). Uniquement avant
+# le merge : apres, une reco ne simplifie plus rien, elle cree une PR de rattrapage.
 # Lecture seule : il commente, il ne modifie rien.
 # Secret requis : CLAUDE_CODE_OAUTH_TOKEN (abonnement Claude, genere par `claude setup-token`).
 name: Ponytail review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened]
   issues:
     types: [opened]
 
