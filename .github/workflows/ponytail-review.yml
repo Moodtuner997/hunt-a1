@@ -25,7 +25,12 @@ jobs:
   review:
     # Dependabot ne recoit pas les secrets du depot : CLAUDE_CODE_OAUTH_TOKEN arrive vide
     # et l'action echoue en rouge sans avoir rien revu. Mieux vaut sauter le job.
-    if: github.actor != 'dependabot[bot]'
+    # Depot public : une PR de fork n'a pas non plus les secrets, et une issue ouverte par
+    # n'importe qui depenserait l'abonnement Claude de Theo. Seul le proprietaire declenche.
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name != 'issues' || github.event.issue.author_association == 'OWNER') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
