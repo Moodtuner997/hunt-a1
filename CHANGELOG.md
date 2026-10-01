@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1](https://github.com/Moodtuner997/hunt-a1/compare/v1.0.0...v1.0.1) (2026-10-01)
+
+
+### Documentation
+
+* **claude:** bloc release réduit à une ligne, règle renvoyée au workspace ([ece1e06](https://github.com/Moodtuner997/hunt-a1/commit/ece1e06b0ee79ca903c48cff92cc9339f3f78bc8))
+* **claude:** release tenue par l'Action release.yml ([6869bf3](https://github.com/Moodtuner997/hunt-a1/commit/6869bf31cc90ba56817d7c98b5e5dcee80d6ebb7))
+
 ## 1.0.0 (2026-09-22)
 
 
