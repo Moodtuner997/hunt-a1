@@ -54,5 +54,5 @@ State files all live in `$HOME`: `.hunt-a1.lock`, `.hunt-a1.success`, `.hunt-a1.
 ## Release
 
 Fleet rule in the workspace `CLAUDE.md` (`../CLAUDE.md`, "Commits et release"). Here: release-please type
-`simple`, `bash scripts/release.sh hunt-a1` from the workspace root; after the release PR is merged it
+`simple`, `.github/workflows/release.yml` on every push to `master` (GitHub-hosted runner, free on a public repo; prod: `bash scripts/release.sh hunt-a1 --prod` from the workspace root); it merges the release PR itself, then
 stops at tag + changelog, nothing is deployed. Versions: https://github.com/Moodtuner997/hunt-a1/releases
