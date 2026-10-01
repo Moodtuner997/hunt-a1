@@ -1,0 +1,133 @@
+name: Release
+
+# Chaine de release du parc, tenue par Actions (modele : ou-jouer #274).
+# Sur chaque push de master :
+#   1. release-please pose tag + release si une release PR vient d'etre fusionnee,
+#      et tient la release PR a jour (version + changelog) ;
+#   2. la release PR est fusionnee aussitot : regle du parc, elle suit toute
+#      fusion d'une PR de travail ;
+#   3. second passage de release-please, qui pose le tag de cette fusion : le
+#      push fait avec GITHUB_TOKEN ne relance pas ce workflow ;
+#   4. si une release est sortie et que le depot a `staging`, staging avance en
+#      fast-forward sur le tag, puis les workflows qui ecoutent un push de staging
+#      sont lances par workflow_dispatch (un push GITHUB_TOKEN ne les declenche pas).
+# main (la prod) n'est pas ici : `release.sh --prod` depuis le laptop.
+# Modele et runner : scripts/release-workflow.yml et scripts/a1-runner.sh du parc.
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+# Deux fusions rapprochees ne doivent pas publier deux fois la meme release.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release PR et tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.rp2.outputs.release_created || steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp2.outputs.tag_name || steps.rp.outputs.tag_name }}
+    steps:
+      - id: rp
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        with:
+          target-branch: master
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # Cherchee par son etiquette plutot que lue dans la sortie de l'etape
+      # precedente : une release PR deja a jour n'y figure pas.
+      - id: merge
+        name: Fusionner la release PR
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { data: prs } = await github.rest.pulls.list({
+              ...context.repo, state: 'open', base: 'master', per_page: 50 });
+            const rel = prs.filter(p => p.labels.some(l => l.name === 'autorelease: pending'));
+            if (rel.length === 0) { core.info('aucune release PR ouverte'); return; }
+            for (const pr of rel) {
+              // Une PR toute fraiche peut etre refusee le temps que GitHub calcule
+              // sa fusionnabilite : quelques essais espaces.
+              for (let i = 1; ; i++) {
+                try {
+                  await github.rest.pulls.merge({
+                    ...context.repo, pull_number: pr.number, merge_method: 'squash' });
+                  core.info(`release PR #${pr.number} fusionnee : ${pr.title}`);
+                  break;
+                } catch (e) {
+                  if (i === 6) throw e;
+                  core.info(`essai ${i} : ${e.message}`);
+                  await new Promise(r => setTimeout(r, 5000));
+                }
+              }
+            }
+            core.setOutput('merged', 'true');
+
+      - id: rp2
+        if: steps.merge.outputs.merged == 'true'
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        with:
+          target-branch: master
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-pull-request: true
+
+  staging:
+    name: Avancer staging
+    needs: release
+    if: needs.release.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # Jamais de force : staging pointe toujours sur un commit tague de la branche
+      # de travail. Si elle porte autre chose, c'est une decision humaine.
+      - id: ff
+        name: Fast-forward de staging sur le tag
+        env:
+          TAG: ${{ needs.release.outputs.tag_name }}
+        run: |
+          if ! git ls-remote --exit-code --heads origin staging >/dev/null; then
+            echo "pas de branche staging : tag et changelog seulement."
+            exit 0
+          fi
+          git fetch origin staging --tags
+          sha=$(git rev-parse "$TAG^{commit}")
+          if ! git merge-base --is-ancestor origin/staging "$sha"; then
+            echo "::error::staging n'est pas un ancetre de $TAG : rien n'est force, a realigner a la main."
+            exit 1
+          fi
+          git push origin "$sha:refs/heads/staging"
+          echo "staging avance sur $TAG ($sha)"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      # Un workflow est relance s'il a un workflow_dispatch et une ligne
+      # `branches:` qui cite staging (le push qu'il aurait recu).
+      - name: Lancer les workflows de staging
+        if: steps.ff.outputs.pushed == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const dir = '.github/workflows';
+            for (const f of fs.readdirSync(dir)) {
+              if (!/\.ya?ml$/.test(f) || f.startsWith('release.')) continue;
+              const t = fs.readFileSync(`${dir}/${f}`, 'utf8');
+              if (!/workflow_dispatch/.test(t) || !/^\s*branches:.*\bstaging\b/m.test(t)) continue;
+              await github.rest.actions.createWorkflowDispatch({
+                ...context.repo, workflow_id: f, ref: 'staging' });
+              core.info(`${f} lance sur staging`);
+            }
