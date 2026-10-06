@@ -55,6 +55,12 @@ jobs:
             const rel = prs.filter(p => p.labels.some(l => l.name === 'autorelease: pending'));
             if (rel.length === 0) { core.info('aucune release PR ouverte'); return; }
             for (const pr of rel) {
+              // ou-jouer#349 : fusionnee dans la seconde, la PR fait mourir le run CI
+              // `pull_request` qui nait ~4 s apres son ouverture (« workflow file
+              // issue », 0 job, croix rouge). On laisse ce run s'evaluer avant de
+              // fusionner ; cote ci.yml, les jobs s'effacent sur la branche de
+              // release (if: github.head_ref != 'release-please--branches--<cible>').
+              await new Promise(r => setTimeout(r, 30000));
               // Une PR toute fraiche peut etre refusee le temps que GitHub calcule
               // sa fusionnabilite : quelques essais espaces.
               for (let i = 1; ; i++) {
