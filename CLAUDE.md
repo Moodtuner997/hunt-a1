@@ -1,10 +1,12 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## What this is
+# CLAUDE.md — hunt-a1
 
 Public MIT project: a single dependency-free bash script (`hunt-a1.sh`) that retries `oci compute instance launch` across availability domains via cron until Oracle Cloud Always Free Ampere A1 capacity is found. Differentiator vs other hunters: only bash + the OCI CLI, auditable in minutes.
+
+## Before any action
+
+- Public repo: everything committed is world-readable, history included. No real OCIDs, regions, emails or hostnames, in files or in commit messages; real values live only in `~/hunt-a1.conf`. Private notes stay in `IDEES.md` (gitignored).
+- State lives in the issues and releases; there is no HANDOFF. Check reality first: `git fetch --prune`, `git status`, `git log -5 origin/master`.
+- Never launch a real run (`bash hunt-a1.sh`) from a session without the account owner's explicit request: it creates (or tries to create) a cloud instance on the configured account. Checks without side effects: `bash -n`, `shellcheck`.
 
 ## Commands
 
@@ -31,9 +33,9 @@ There is no test suite and no mock of the OCI CLI; a real run needs `oci` config
 1. `set -euo pipefail`. Exit silently if `~/.hunt-a1.fatal` exists (breaker guard, no log spam from a stale cron).
 2. Load `$HUNT_A1_CONF` (default `~/hunt-a1.conf`); validate `COMPARTMENT_ID SUBNET_ID IMAGE_ID SSH_KEY_PATH INSTANCE_NAME SHAPE OCPUS MEMORY_GB` and at least `AD_1`. `AD_2`/`AD_3` are optional; the AD list is built dynamically.
 3. Exit if `~/.hunt-a1.success` exists; take a non-blocking `flock` on `~/.hunt-a1.lock` (fd 9).
-4. For each AD: `oci compute instance launch ... --wait-for-state RUNNING --max-wait-seconds 300`, output captured with `|| true`. Then classify the response by grep:
+4. For each AD: `oci compute instance launch ... --wait-for-state RUNNING --max-wait-seconds 300`, output captured with `|| true`. Then classify the response by grep, checked in this order:
    - `"lifecycle-state": "RUNNING"` -> success: write instance id to the success file, fetch public IP via vnic-attachment + `oci network vnic get`, email, `disable_cron`, exit 0.
-   - `OUT_OF_HOST_CAPACITY|Out of host capacity|InternalError|TooManyRequests` -> retryable: reset fail counter, next AD.
+   - `OUT_OF_HOST_CAPACITY|Out of host capacity|InternalError|TooManyRequests` -> retryable: reset fail counter (`reset_fail_count`), next AD.
    - `LimitExceeded|NotAuthorized|InvalidParameter|NotAuthenticated|ServiceError` -> fatal: increment `~/.hunt-a1.failcount`; at `MAX_CONSECUTIVE_FATALS` (default 30) `trip_breaker` writes `~/.hunt-a1.fatal`, removes the cron line, sends ONE email, exit 1.
    - anything else -> WARN with first 20 lines.
 5. `disable_cron` = `crontab -l | grep -v hunt-a1 | crontab -` (matches on the string `hunt-a1`, so the cron line must contain it).
@@ -44,15 +46,19 @@ State files all live in `$HOME`: `.hunt-a1.lock`, `.hunt-a1.success`, `.hunt-a1.
 
 ## Conventions and gotchas
 
-- Public repo: keep it user-agnostic — no real OCIDs, regions, emails or hostnames in committed files. Real values live only in `~/hunt-a1.conf`.
 - Free Tier A1 limits (see README 'June 2026 Free Tier change') are 2 OCPU / 12 GB total, max 2 instances; keep README, conf example, script and this line in sync. Asking for more on Free Tier yields `LimitExceeded` on every attempt and is exactly what the circuit breaker exists for.
 - Keep the script single-file and zero-dependency; do not add Python/Node tooling.
 - Log lines follow `[$(date -Is)] LEVEL: message` with levels INFO / RETRY / FATAL / WARN / SUCCESS / ERROR — the README tells users to `grep SUCCESS`.
-- README is English; commit messages English. The README links to hitrov/oci-arm-host-capacity as the archived historical reference.
+- README is English; commit descriptions follow the language already used in the history. The README links to hitrov/oci-arm-host-capacity as the archived historical reference.
 
 <!-- chaine-release -->
 ## Release
 
-Fleet rule in the workspace `CLAUDE.md` (`../CLAUDE.md`, "Commits et release"). Here: release-please type
-`simple`, `.github/workflows/release.yml` on every push to `master` (GitHub-hosted runner, free on a public repo; prod: `bash scripts/release.sh hunt-a1 --prod` from the workspace root); it merges the release PR itself, then
-stops at tag + changelog, nothing is deployed. Versions: https://github.com/Moodtuner997/hunt-a1/releases
+Single branch `master`. Conventional Commits (`<type>(<scope>): <description>`): release-please (type `simple`) builds the version and changelog from them. `.github/workflows/release.yml` runs on every push to `master` on a GitHub-hosted runner (never a self-hosted one on a public repo), merges the release PR itself and stops at tag + changelog; nothing is deployed. Versions: https://github.com/Moodtuner997/hunt-a1/releases
+
+## Mistakes not to repeat
+
+- Do not ask for more than the Free Tier allows (2 OCPU / 12 GB, 2 instances): every attempt failed with `LimitExceeded` and filled the log and the inbox; that is why the circuit breaker and its single mail exist (a5aaae5, 2026-07-22).
+- Do not write a cron line without the string `hunt-a1`: `disable_cron` would never remove it after success.
+- Do not keep private ideas in a tracked file: `IDEES.md` had to be gitignored (0b1045f, 2026-10-12).
+- Do not run a token-backed review workflow on this public repo: an automated review was removed (bcd6f54, 2026-10-02).
