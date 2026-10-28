@@ -1,64 +1,23 @@
-# CLAUDE.md — hunt-a1
+# Hunt A1
 
-Public MIT project: a single dependency-free bash script (`hunt-a1.sh`) that retries `oci compute instance launch` across availability domains via cron until Oracle Cloud Always Free Ampere A1 capacity is found. Differentiator vs other hunters: only bash + the OCI CLI, auditable in minutes.
+## Règles inconditionnelles
+- Dépôt public MIT : tout ce qui est commité est lisible par le monde, historique compris ; aucun OCID, région, e-mail ni hostname réel (fichiers et messages de commit), les vraies valeurs vivent dans `~/hunt-a1.conf` ; les idées privées vont dans `IDEES.md` (ignoré).
+- Jamais de lancement réel (`bash hunt-a1.sh`) sans demande explicite du propriétaire du compte : il crée (ou tente de créer) une instance cloud ; contrôles sans effet de bord : `just test`, `just lint`.
+- Un seul fichier bash sans dépendance (pas de Python ni Node) ; README en anglais, descriptions de commit dans la langue de l'historique ; fonctionnement, état, limites du Free Tier : `docs/architecture.md` et README.
+- Branche unique `master` (dépôt public, runner GitHub seulement, jamais auto-hébergé) : release-please tire tag et changelog des commits conventionnels, rien n'est déployé.
 
-## Before any action
+<!-- gen:debut -->
+Dépôt `Moodtuner997/hunt-a1` (projet `hunt-a1`, hunt-a1, statut pause). Déploiement : aucun (pas de déploiement).
+Avant toute action : `gh issue list --label etat` (l'issue État, vérité opérationnelle), `git fetch --prune`, `just --list` (points d'entrée uniformes : test, lint, dev, build, deploy-staging).
+Tâches = issues GitHub ; état du dépôt = issue épinglée État ; mémoire longue = nœud `02-projets/hunt-a1.md` du second cerveau. Rien d'autre ne fait foi.
+Enveloppe : PR vers `dev`, fusion si CI verte ; `staging` et `main` n'avancent que par tag (release.yml, release.sh). Secrets jamais lus. Généré par scripts/claude-md-gen.py : ne pas éditer ce bloc.
+<!-- gen:fin -->
 
-- Public repo: everything committed is world-readable, history included. No real OCIDs, regions, emails or hostnames, in files or in commit messages; real values live only in `~/hunt-a1.conf`. Private notes stay in `IDEES.md` (gitignored).
-- State lives in the issues and releases; there is no HANDOFF. Check reality first: `git fetch --prune`, `git status`, `git log -5 origin/master`.
-- Never launch a real run (`bash hunt-a1.sh`) from a session without the account owner's explicit request: it creates (or tries to create) a cloud instance on the configured account. Checks without side effects: `bash -n`, `shellcheck`.
-
-## Commands
-
-```bash
-cp hunt-a1.conf.example ~/hunt-a1.conf && chmod 600 ~/hunt-a1.conf   # config (script warns if perms != 600/400)
-bash hunt-a1.sh                     # one manual run (logs to stdout with ISO timestamps)
-HUNT_A1_CONF=/other/path.conf bash hunt-a1.sh   # alternate config location
-shellcheck hunt-a1.sh               # lint (script carries `# shellcheck source=/dev/null` for the conf source)
-bash -n hunt-a1.sh                  # syntax check without running
-
-# cron install (every 2 min) — this is the "deploy"
-chmod +x hunt-a1.sh
-crontab -e   # */2 * * * * /bin/bash /path/to/hunt-a1.sh >> ~/hunt-a1.log 2>&1
-tail -f ~/hunt-a1.log
-
-# re-arm after the circuit breaker tripped
-rm ~/.hunt-a1.fatal   # then re-add the cron line
-```
-
-There is no test suite and no mock of the OCI CLI; a real run needs `oci` configured (`oci setup config`), `curl`, `flock`, optionally `python3`.
-
-## Architecture (execution flow of `hunt-a1.sh`)
-
-1. `set -euo pipefail`. Exit silently if `~/.hunt-a1.fatal` exists (breaker guard, no log spam from a stale cron).
-2. Load `$HUNT_A1_CONF` (default `~/hunt-a1.conf`); validate `COMPARTMENT_ID SUBNET_ID IMAGE_ID SSH_KEY_PATH INSTANCE_NAME SHAPE OCPUS MEMORY_GB` and at least `AD_1`. `AD_2`/`AD_3` are optional; the AD list is built dynamically.
-3. Exit if `~/.hunt-a1.success` exists; take a non-blocking `flock` on `~/.hunt-a1.lock` (fd 9).
-4. For each AD: `oci compute instance launch ... --wait-for-state RUNNING --max-wait-seconds 300`, output captured with `|| true`. Then classify the response by grep, checked in this order:
-   - `"lifecycle-state": "RUNNING"` -> success: write instance id to the success file, fetch public IP via vnic-attachment + `oci network vnic get`, email, `disable_cron`, exit 0.
-   - `OUT_OF_HOST_CAPACITY|Out of host capacity|InternalError|TooManyRequests` -> retryable: reset fail counter (`reset_fail_count`), next AD.
-   - `LimitExceeded|NotAuthorized|InvalidParameter|NotAuthenticated|ServiceError` -> fatal: increment `~/.hunt-a1.failcount`; at `MAX_CONSECUTIVE_FATALS` (default 30) `trip_breaker` writes `~/.hunt-a1.fatal`, removes the cron line, sends ONE email, exit 1.
-   - anything else -> WARN with first 20 lines.
-5. `disable_cron` = `crontab -l | grep -v hunt-a1 | crontab -` (matches on the string `hunt-a1`, so the cron line must contain it).
-6. Email is optional: skipped unless `SMTP_USER`, `SMTP_PASS`, `NOTIFY_TO` are all set; sent with curl `smtps://` and a `--netrc-file` process substitution (defaults `smtp.gmail.com:465`). Failures are non-blocking.
-7. `json_field` parses OCI JSON with python3 when present, grep/sed fallback otherwise.
-
-State files all live in `$HOME`: `.hunt-a1.lock`, `.hunt-a1.success`, `.hunt-a1.fatal`, `.hunt-a1.failcount` (all gitignored, as are `*.conf` except the example and `*.log`).
-
-## Conventions and gotchas
-
-- Free Tier A1 limits (see README 'June 2026 Free Tier change') are 2 OCPU / 12 GB total, max 2 instances; keep README, conf example, script and this line in sync. Asking for more on Free Tier yields `LimitExceeded` on every attempt and is exactly what the circuit breaker exists for.
-- Keep the script single-file and zero-dependency; do not add Python/Node tooling.
-- Log lines follow `[$(date -Is)] LEVEL: message` with levels INFO / RETRY / FATAL / WARN / SUCCESS / ERROR — the README tells users to `grep SUCCESS`.
-- README is English; commit descriptions follow the language already used in the history. The README links to hitrov/oci-arm-host-capacity as the archived historical reference.
-
-<!-- chaine-release -->
-## Release
-
-Single branch `master`. Conventional Commits (`<type>(<scope>): <description>`): release-please (type `simple`) builds the version and changelog from them. `.github/workflows/release.yml` runs on every push to `master` on a GitHub-hosted runner (never a self-hosted one on a public repo), merges the release PR itself and stops at tag + changelog; nothing is deployed. Versions: https://github.com/Moodtuner997/hunt-a1/releases
-
-## Mistakes not to repeat
-
-- Do not ask for more than the Free Tier allows (2 OCPU / 12 GB, 2 instances): every attempt failed with `LimitExceeded` and filled the log and the inbox; that is why the circuit breaker and its single mail exist (a5aaae5, 2026-07-22).
-- Do not write a cron line without the string `hunt-a1`: `disable_cron` would never remove it after success.
-- Do not keep private ideas in a tracked file: `IDEES.md` had to be gitignored (0b1045f, 2026-10-12).
-- Do not run a token-backed review workflow on this public repo: an automated review was removed (bcd6f54, 2026-10-02).
+## Pièges
+- Demander plus que le Free Tier (2 OCPU / 12 Go, 2 instances) donne `LimitExceeded` à chaque essai, remplit le log et la boîte mail : raison du coupe-circuit et de son mail unique (a5aaae5, 2026-07-22) ; README, `hunt-a1.conf.example`, script et `docs/architecture.md` restent alignés.
+- Une ligne cron sans la chaîne `hunt-a1` n'est jamais retirée par `disable_cron` (filtre `grep -v hunt-a1`) : le script relancerait après succès.
+- Aucune idée privée dans un fichier suivi : `IDEES.md` a dû être ignoré (0b1045f, 2026-10-12).
+- Pas de workflow de revue à jeton sur ce dépôt public : une revue automatique a été retirée (bcd6f54, 2026-10-02).
+- Les niveaux de log `INFO / RETRY / FATAL / WARN / SUCCESS / ERROR` sont cités par le README (`grep SUCCESS`) : ne pas les renommer.
+- `shellcheck` absent du laptop : `just lint` retombe sur `npx shellcheck` (v0.11.0, mesuré le 2026-10-28).
+- La branche distante `release-please--branches--master` subsiste après la release 1.0.2 (71d06f2, doublon du squash 83366a9) : à purger si `git log master..` n'y trouve que ce commit.
