@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/Moodtuner997/hunt-a1/compare/v1.0.1...v1.0.2) (2026-10-28)
+
+
+### Construction
+
+* **release:** les commits docs ne publient plus de release ([#5](https://github.com/Moodtuner997/hunt-a1/issues/5)) ([a96351a](https://github.com/Moodtuner997/hunt-a1/commit/a96351af7f5ac74d0b7f236c5f738ff8fe93e788))
+
 ## [1.0.1](https://github.com/Moodtuner997/hunt-a1/compare/v1.0.0...v1.0.1) (2026-10-01)
 
 
