@@ -12,7 +12,7 @@ name: Release
 #      fast-forward sur le tag, puis les workflows qui ecoutent un push de staging
 #      sont lances par workflow_dispatch (un push GITHUB_TOKEN ne les declenche pas).
 # main (la prod) n'est pas ici : `release.sh --prod` depuis le laptop.
-# Modele et runner : scripts/release-workflow.yml et scripts/a1-runner.sh du parc.
+# Modele : chaine de release commune.
 on:
   push:
     branches: [master]
@@ -32,6 +32,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # Lire, annuler et effacer les runs fantomes de la release PR.
+      actions: write
     outputs:
       release_created: ${{ steps.rp2.outputs.release_created || steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp2.outputs.tag_name || steps.rp.outputs.tag_name }}
@@ -54,13 +56,64 @@ jobs:
               ...context.repo, state: 'open', base: 'master', per_page: 50 });
             const rel = prs.filter(p => p.labels.some(l => l.name === 'autorelease: pending'));
             if (rel.length === 0) { core.info('aucune release PR ouverte'); return; }
+            // La release PR, ouverte par GITHUB_TOKEN, fait naitre des
+            // runs `pull_request` (ci.yml, ponytail-review.yml, e2e.yml...) qui finissent
+            // `action_required` sans aucun job (approbation qui ne vient pas), puis
+            // `failure` a la fusion : croix rouge sur chaque release. On attend ces runs,
+            // plafonne a 4 min : un run sans job est efface (annule d'abord s'il n'est
+            // pas termine) ; un run avec des jobs reste, vert ou rouge, pour qu'un vrai
+            // echec se voie. Runs cherches dans tout le depot : un depot sans ci.yml
+            // rendrait un 404 qui bloquerait la release.
+            const pause = ms => new Promise(r => setTimeout(r, ms));
+            async function runsPr(sha) {
+              const { data } = await github.rest.actions.listWorkflowRunsForRepo({
+                ...context.repo, event: 'pull_request', head_sha: sha, per_page: 20 });
+              return data.workflow_runs;
+            }
+            async function nbJobs(run) {
+              const { data } = await github.rest.actions.listJobsForWorkflowRun({
+                ...context.repo, run_id: run.id, per_page: 1 });
+              return data.total_count;
+            }
+            async function effacer(run, pourquoi) {
+              core.notice(`run ${run.name} ${run.id} ${pourquoi} : efface`);
+              try {
+                await github.rest.actions.deleteWorkflowRun({ ...context.repo, run_id: run.id });
+              } catch (e) { core.warning(`effacement du run ${run.id} impossible : ${e.message}`); }
+            }
+            async function solderRuns(sha) {
+              let runs = [];
+              let jobs = {};
+              for (let t = 0; t < 24; t++) { // 24 x 10 s = 4 min au plus
+                runs = await runsPr(sha);
+                // Le run nait ~4 s apres l'ouverture : rien en 1 min, rien a attendre.
+                if (runs.length === 0 && t >= 5) { core.info('aucun run pull_request pour cette release PR'); return; }
+                jobs = {};
+                for (const run of runs) jobs[run.id] = await nbJobs(run);
+                // Fini d'attendre quand chaque run est termine ou a recu ses jobs.
+                if (runs.length > 0 && runs.every(r => r.status === 'completed' || jobs[r.id] > 0)) break;
+                await pause(10000);
+              }
+              for (const run of runs) {
+                if (jobs[run.id] > 0) {
+                  core.info(`run ${run.name} ${run.id} : ${jobs[run.id]} job(s), ${run.status} ${run.conclusion || ''}`);
+                } else if (run.status === 'completed') {
+                  if (run.conclusion === 'success' || run.conclusion === 'skipped') core.info(`run ${run.name} ${run.id} : ${run.conclusion}`);
+                  else await effacer(run, `termine en ${run.conclusion} sans job`);
+                } else {
+                  try { await github.rest.actions.cancelWorkflowRun({ ...context.repo, run_id: run.id }); }
+                  catch (e) { core.info(`annulation de ${run.id} : ${e.message}`); }
+                  for (let t = 0; t < 12; t++) {
+                    const { data: r } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: run.id });
+                    if (r.status === 'completed') break;
+                    await pause(5000);
+                  }
+                  await effacer(run, `toujours sans job apres 4 min (${run.status})`);
+                }
+              }
+            }
             for (const pr of rel) {
-              // ou-jouer#349 : fusionnee dans la seconde, la PR fait mourir le run CI
-              // `pull_request` qui nait ~4 s apres son ouverture (« workflow file
-              // issue », 0 job, croix rouge). On laisse ce run s'evaluer avant de
-              // fusionner ; cote ci.yml, les jobs s'effacent sur la branche de
-              // release (if: github.head_ref != 'release-please--branches--<cible>').
-              await new Promise(r => setTimeout(r, 30000));
+              await solderRuns(pr.head.sha);
               // Une PR toute fraiche peut etre refusee le temps que GitHub calcule
               // sa fusionnabilite : quelques essais espaces.
               for (let i = 1; ; i++) {
@@ -72,7 +125,7 @@ jobs:
                 } catch (e) {
                   if (i === 6) throw e;
                   core.info(`essai ${i} : ${e.message}`);
-                  await new Promise(r => setTimeout(r, 5000));
+                  await pause(5000);
                 }
               }
             }
