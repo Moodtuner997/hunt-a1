@@ -17,7 +17,7 @@ Enveloppe : une seule branche, tag + release. Secrets jamais lus. Généré par 
 - Demander plus que le Free Tier (2 OCPU / 12 Go, 2 instances) donne `LimitExceeded` à chaque essai, remplit le log et la boîte mail : raison du coupe-circuit et de son mail unique (a5aaae5, 2026-07-22) ; README, `hunt-a1.conf.example`, script et `docs/architecture.md` restent alignés.
 - Une ligne cron sans la chaîne `hunt-a1` n'est jamais retirée par `disable_cron` (filtre `grep -v hunt-a1`) : le script relancerait après succès.
 - Aucune idée privée dans un fichier suivi : `IDEES.md` a dû être ignoré (0b1045f, 2026-10-12).
-- Pas de workflow de revue à jeton sur ce dépôt public : une revue automatique a été retirée (bcd6f54, 2026-10-02).
+- Pas de workflow de review à API key sur ce dépôt public : une review automatique a été retirée (bcd6f54, 2026-10-02).
 - Les niveaux de log `INFO / RETRY / FATAL / WARN / SUCCESS / ERROR` sont cités par le README (`grep SUCCESS`) : ne pas les renommer.
 - `shellcheck` absent du laptop : `just lint` retombe sur `npx shellcheck` (v0.11.0, mesuré le 2026-10-28).
 - La branche distante `release-please--branches--master` subsiste après la release 1.0.2 (71d06f2, doublon du squash 83366a9) : à purger si `git log master..` n'y trouve que ce commit.
