@@ -38,6 +38,30 @@ jobs:
       release_created: ${{ steps.rp2.outputs.release_created || steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp2.outputs.tag_name || steps.rp.outputs.tag_name }}
     steps:
+      # Reliquat mesure le 11/11 (2 runs sur 11 releases) : un run `pull_request` de la release PR peut naitre une minute
+      # APRES sa fusion, donc apres l'attente de l'etape `merge`, et finir rouge sans aucun job.
+      # Plutot que d'occuper le runner a l'attendre, chaque passage efface d'abord ceux des
+      # releases precedentes : aucun delai ajoute, le fantome vit au plus jusqu'au push suivant.
+      # Ne touche qu'aux runs de la branche de release, termines, sans job, ni verts ni sautes.
+      - name: Effacer les runs fantomes des releases precedentes
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { data } = await github.rest.actions.listWorkflowRunsForRepo({
+              ...context.repo, event: 'pull_request', branch: 'release-please--branches--master',
+              status: 'completed', per_page: 30 });
+            for (const run of data.workflow_runs) {
+              if (run.conclusion === 'success' || run.conclusion === 'skipped') continue;
+              const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
+                ...context.repo, run_id: run.id, per_page: 1 });
+              if (jobs.total_count > 0) continue;
+              core.notice(`run ${run.name} ${run.id} termine en ${run.conclusion} sans job, ne apres la fusion : efface`);
+              try {
+                await github.rest.actions.deleteWorkflowRun({ ...context.repo, run_id: run.id });
+              } catch (e) { core.warning(`effacement du run ${run.id} impossible : ${e.message}`); }
+            }
+
       - id: rp
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         with:
